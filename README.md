@@ -1,4 +1,4 @@
-# Squad
+# Squad (Consider the name Squad Platform)
  Blockchain platform for user contributed content marketplaces
  
 * Smart contract system
