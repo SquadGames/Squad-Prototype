@@ -1,6 +1,13 @@
 # Squad (Consider the name Squad Platform)
- Blockchain platform for user contributed content marketplaces
- 
+
+Decentralized marketplace for cooperative content
+
+## Developing
+
+Run tests with `npx builder test`
+
+## Outline
+
 * Smart contract system
   * Create bonds associated to content
   * Automatically purchase a basket of bonds with surplus from another
