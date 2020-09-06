@@ -4,7 +4,9 @@ Decentralized marketplace for cooperative content
 
 ## Developing
 
-Run tests with `npx builder test`
+Run tests with `npm test`
+Run the full CI suite with `npm run ci`
+Run `npx standard --fix` to pass the linting in the CI suite
 
 ## Outline
 
