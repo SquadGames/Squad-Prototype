@@ -8,6 +8,7 @@
   },
   "scripts": {
     "ci": "npm run lint && npm run test",
+    "lint": "npm run lint-js && npm run lint-sol",
     "lint-js": "npx standard",
     "fix-js": "npx standard --fix",
     "lint-sol": "npx solhint -f table contracts/**/*.sol",

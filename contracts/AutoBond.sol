@@ -63,7 +63,7 @@ contract AutoBond is Ownable {
     );
 
     // GlobalFeeBasisPointsChange is emitted when the fee rate changes
-    event GlobalFeeBasisPointsChange(
+    event NetworkFeeBasisPointsChange(
         uint256 fromBasisPoints,
         uint256 toBasisPoints
     );
@@ -83,7 +83,7 @@ contract AutoBond is Ownable {
         );
         require(_curve != address(0), "Curve address required");
         networkFeeBasisPoints = _networkFeeBasisPoints;
-        emit GlobalFeeBasisPointsChange(0, networkFeeBasisPoints);
+        emit NetworkFeeBasisPointsChange(0, networkFeeBasisPoints);
         reserveToken = _reserveToken;
         curve = Curve(_curve);
     }
@@ -100,8 +100,8 @@ contract AutoBond is Ownable {
         return address(curve);
     }
 
-    // setGlobalFeeBasisPoints allows the owner to change the network fee rate
-    function setGlobalFeeBasisPoints(
+    // setNetworkFeeBasisPoints allows the owner to change the network fee rate
+    function setNetworkFeeBasisPoints(
         uint256 fromBasisPoints,
         uint256 toBasisPoints
     ) public onlyOwner {
@@ -110,7 +110,7 @@ contract AutoBond is Ownable {
             "fromBasisPoints mismatch"
         );
         networkFeeBasisPoints = toBasisPoints;
-        emit GlobalFeeBasisPointsChange(fromBasisPoints, toBasisPoints);
+        emit NetworkFeeBasisPointsChange(fromBasisPoints, toBasisPoints);
     }
 
     // withdraw transfers all owed fees to the network owner and all
