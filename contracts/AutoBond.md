@@ -6,10 +6,15 @@ licences
 ## Data
 
 `uint16 networkFeeBasisPoints`
+
 `address treasury`
+
 `mapping(address => uint256) public accounts`
+
 `address public reserveToken`
+
 `Curve public curve`
+
 ```
 struct Bond {
     address benefactor;
@@ -19,6 +24,7 @@ struct Bond {
     mapping(address => uint256 balances;
 }
 ```
+
 `mapping(bytes32 => Bond) puclic bonds`
 
 ## Interface
