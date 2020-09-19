@@ -210,6 +210,10 @@ describe('AutoBond', () => {
     assert(false, "Not Implemented")
   })
 
+  it("Keeps accurate accounting through buys and sells", async () => {
+    assert(false, "Not Implimented")
+  })
+
   it("Lets Bob 'refinance' the good", async () => {
     // maybe post MVP?
     assert(false, "Not Implemented")
