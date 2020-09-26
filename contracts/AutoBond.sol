@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
+
 pragma solidity >=0.6.0 <0.7.0;
 
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "./Curve.sol";
+import "./BondToken.sol";
 
-contract Squad is Ownable, ERC721 {
+contract AutoBond is Ownable {
     using SafeMath for uint256;
     using SafeMath for uint16;
 
@@ -25,7 +26,7 @@ contract Squad is Ownable, ERC721 {
     mapping(address => uint256) public accounts;
 
     // ERC20 token backing the bonds
-    address public reserveToken;
+    ERC20 public reserveToken;
 
     Curve public curve;
 
@@ -38,10 +39,9 @@ contract Squad is Ownable, ERC721 {
         // purchasePrice is emitted in the purchase event so clients can
         // check whether how much a user needs to have for a calid
         // purchase
+        // TODO factor this out into the Squad contract
         uint256 purchasePrice;
-        // let these default to 0
-        uint256 supply;
-        mapping(address => uint256) balances;
+        BondToken token;
     }
 
     // mapping from definition ID to it's bond
@@ -56,7 +56,7 @@ contract Squad is Ownable, ERC721 {
         address _reserveToken,
         address _curve,
         address _treasury
-    ) public ERC721("Squad", "SQD") {
+    ) public {
         require(
             _networkFeeBasisPoints <= 10000,
             "AutoBond: Network fee greater than 100%"
@@ -69,7 +69,7 @@ contract Squad is Ownable, ERC721 {
         require(_treasury != address(0), "Treasury address required");
         networkFeeBasisPoints = _networkFeeBasisPoints;
         emit NetworkFeeBasisPointsChange(0, networkFeeBasisPoints);
-        reserveToken = _reserveToken;
+        reserveToken = ERC20(_reserveToken);
         curve = Curve(_curve);
         treasury = _treasury;
     }
@@ -108,10 +108,10 @@ contract Squad is Ownable, ERC721 {
         );
 
         // transfer the account total minus the network fee to the benefactor
-        require(IERC20(reserveToken).transfer(benefactor, benefactorTotal));
+        require(reserveToken.transfer(benefactor, benefactorTotal));
 
         // transfer the fee to the treasury
-        require(IERC20(reserveToken).transfer(treasury, networkFee));
+        require(reserveToken.transfer(treasury, networkFee));
     }
 
     // NewBond is emitted when a new bond is created. The submitter may
@@ -129,6 +129,9 @@ contract Squad is Ownable, ERC721 {
         address benefactor,
         uint16 benefactorBasisPoints,
         uint256 purchasePrice,
+        uint256 initialPurchaseAmount,
+        string memory tokenName,
+        string memory tokenSymbol,
         string memory metadata
     ) public {
         require(
@@ -139,15 +142,15 @@ contract Squad is Ownable, ERC721 {
             benefactorBasisPoints <= 10000,
             "AutoBond: benefactorBasisPoints greater than 100%"
         );
+        require(!exists(bondId), "AutoBond: Bond already exists");
 
         Bond storage newBond = bonds[bondId];
-        require(
-            newBond.benefactor == address(0),
-            "AutoBond: Bond already exists"
-        );
         newBond.benefactor = benefactor;
         newBond.benefactorBasisPoints = benefactorBasisPoints;
         newBond.purchasePrice = purchasePrice;
+        newBond.token = new BondToken(tokenName, tokenSymbol);
+
+        // TODO buy initial purchase amount on behalf of msg.sender
 
         emit NewBond(
             bondId,
@@ -201,7 +204,7 @@ contract Squad is Ownable, ERC721 {
     );
 
     // mint and buy some amount of some bond
-    function buyBond(
+    function buyTokens(
         bytes32 bondId,
         uint256 amount,
         uint256 maxPrice
@@ -209,16 +212,12 @@ contract Squad is Ownable, ERC721 {
         // get the total price for the amount
         Bond storage bond = bonds[bondId];
         require(bond.benefactor != address(0), "AutoBond: Bond does not exist");
-        uint256 totalPrice = curve.price(bond.supply, amount);
-        require(totalPrice <= maxPrice, "price higher than maxPrice");
+        uint256 totalPrice = curve.price(bond.token.totalSupply(), amount);
+        require(totalPrice <= maxPrice, "AutoBond: price higher than maxPrice");
 
         // Charge the sender totalPrice
         require(
-            IERC20(reserveToken).transferFrom(
-                msg.sender,
-                address(this),
-                totalPrice
-            )
+            reserveToken.transferFrom(msg.sender, address(this), totalPrice)
         );
 
         // add benefactor fee to the benefactor's account
@@ -233,8 +232,7 @@ contract Squad is Ownable, ERC721 {
         );
 
         // mint the new supply for the purchaser
-        bond.supply = bond.supply.add(amount);
-        bond.balances[msg.sender] = bond.balances[msg.sender].add(amount);
+        bond.token.mint(msg.sender, amount);
 
         emit Purchase(
             bondId,
@@ -247,19 +245,23 @@ contract Squad is Ownable, ERC721 {
 
     event Sale(bytes32 bondId, uint256 amount);
 
-    function sellBond(
+    function sellTokens(
         bytes32 bondId,
         uint256 amount,
         uint256 minValue
     ) public {
         // sell curve = buy curve scaled down by bond.benefactorBasisPoints
-        Bond storage bond = bonds[bondId];
-        require(bond.benefactor != address(0), "AutoBond: Bond does not exist");
-        require(bond.supply >= amount, "not enough supply");
+        require(exists(bondId), "AutoBond: Bond does not exist");
+        require(
+            bonds[bondId].token.totalSupply() >= amount,
+            "not enough supply"
+        );
         require(false, "Seller doesn't own enough to sell");
+
+        Bond storage bond = bonds[bondId];
         uint256 subtotalValue = curve.price(
-            bond.supply.sub(amount),
-            bond.supply
+            bond.token.totalSupply().sub(amount),
+            amount
         );
 
         uint256 _;
@@ -268,14 +270,59 @@ contract Squad is Ownable, ERC721 {
             bond.benefactorBasisPoints,
             subtotalValue
         );
-        require(totalValue >= minValue, "value lower than minValue");
-        bond.supply = bond.supply.sub(amount);
-        require(IERC20(reserveToken).transfer(msg.sender, totalValue));
-
-        // burn the amount sold from the sellsers balance
-        bond.supply = bond.supply.sub(amount);
-        bond.balances[msg.sender] = bond.balances[msg.sender].sub(amount);
+        require(totalValue >= minValue, "AutoBond: value lower than minValue");
+        bond.token.burn(msg.sender, amount);
+        require(
+            reserveToken.transfer(msg.sender, totalValue),
+            "AutoBond: reserve transfer error"
+        );
 
         emit Sale(bondId, amount);
+    }
+
+    function transferBondTokenFrom(
+        bytes32 bondId,
+        address from,
+        address to,
+        uint256 amount
+                                   ) public returns (bool) {
+        return bonds[bondId].token.transferFrom(from, to, amount);
+    }
+
+    function balanceOf(bytes32 bondId, address owner)
+        public
+        view
+        returns (uint256)
+    {
+        require(owner != address(0), "AutoBond: invalid owner address");
+        require(exists(bondId), "AutoBond: bond does not exist");
+        return bonds[bondId].token.balanceOf(owner);
+    }
+
+    function supplyOf(bytes32 bondId) public view returns (uint256) {
+        require(exists(bondId), "AutoBond: bond does not exist");
+        return bonds[bondId].token.totalSupply();
+    }
+
+    function spotPrice(bytes32 bondId) public view returns (uint256) {
+        return priceOf(bondId, 1);
+    }
+
+    function priceOf(bytes32 bondId, uint256 amount)
+        public
+        view
+        returns (uint256)
+    {
+        require(exists(bondId), "AutoBond: bond does not exist");
+        return curve.price(bonds[bondId].token.totalSupply(), amount);
+    }
+
+    function purchasePriceOf(bytes32 bondId) public view returns (uint256) {
+        require(exists(bondId), "AutoBond: bond does not exist");
+        return bonds[bondId].purchasePrice;
+    }
+
+    function exists(bytes32 bondId) public view returns (bool) {
+        return bonds[bondId].benefactor != address(0);
     }
 }

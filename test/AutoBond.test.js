@@ -105,32 +105,17 @@ describe('AutoBond', () => {
     )).not.to.be.reverted
   })
 
-  it("Owner can stop the experiment", async () => {
-    // what happens when it's turned off, when the experiment is over?
-    // Turn off every function except the getters, sell, and withdraw
-
-    // set up
-    // A few people make a few bonds and a few people buy from each
-    // someone other than the owner calls stop in there somewhere, it
-    // should revert and buying and selling should keep going
-
-    // owner calls stop
-
-    // check no one can do anything except call getters, sell, and
-    // withdraw. when everything is withdrawn there is a zero balance
-    // in all bonds (allowing for an epsilon of rounding error)
-
-    assert(false, "Not Implemented")
-  })
-
   // Submiting
 
   it("Lets Alice make and administer a new bond", async () => {
     const bondId = ethers.utils.formatBytes32String("testAliceBondId0")
-    const metadata = ethers.utils.formatBytes32String("testAliceBondMetaData0")
     const benefactor = await alice.getAddress()
     const benefactorBasisPoints = ethers.BigNumber.from("179")
     const purchasePrice = ethers.constants.WeiPerEther.mul("10") // 10 bucks
+    const initialPurchaseAmount = ethers.constants.WeiPerEther.mul("1") // 1 token
+    const tokenName = "testAliceTokenName"
+    const tokenSymbol = "TATS"
+    const metadata = "testAliceBondMetaData0"
 
     await expect(
       autoBondAsAlice.createBond(
@@ -138,6 +123,9 @@ describe('AutoBond', () => {
         benefactor,
         benefactorBasisPoints,
         purchasePrice,
+        initialPurchaseAmount,
+        tokenName,
+        tokenSymbol,
         metadata
       )
     ).to.emit(autoBond, "NewBond").withArgs(
@@ -171,26 +159,73 @@ describe('AutoBond', () => {
     // The bond was set up correctly
     const alicesBond = await autoBondAsCarol.bonds(bondId)
     const cases = [
-      ["supply", "0", alicesBond.supply.toString()],
+      ["supply", initialPurchaseAmount, await autoBondAsCarol.supplyOf(bondId)],
       ["benefactor", await alice.getAddress(), alicesBond.benefactor],
       ["benefactorBasisPoints", benefactorBasisPoints.toString(), alicesBond.benefactorBasisPoints.toString()],
       ["purchasePrice", newPurchasePrice.toString(), alicesBond.purchasePrice.toString()],
-      ["balances", {}, alicesBond.balances],
+      ["balanceOf(alice)", initialPurchaseAmount, await autoBondAsCarol.balanceOf(bondId, alice)],
     ]
 
     cases.forEach(([property, expected, actual]) => {
-      console.log(property, expected, actual)
       assert(expected === actual,
              `expected Bond.${property} to be ${expected} but got ${actual}`)
     })
   })
 
-  it("Never lets basis points represent more than 100%", async () => {
-    assert(false, "Not Implemented")
+  it("Rejects new bonds with basis points totalling more than 100%", async () => {
+    const bondId = ethers.utils.formatBytes32String("testBobBondId0")
+    const benefactor = await bob.getAddress()
+    const allowedBasisPoints = ethers.BigNumber.from("10000")
+    const excessiveBasisPoints = ethers.BigNumber.from("10001")
+    const purchasePrice = ethers.constants.WeiPerEther.mul("10") // 10 bucks
+    const initialPurchaseAmount = ethers.constants.WeiPerEther.mul("10") // 10 bucks
+    const tokenName = "BobsToken"
+    const tokenTicker = "BT"
+    const metadata = ethers.utils.formatBytes32String("testBobBondMetaData0")
+
+    await autoBondAsBob.createBond(
+      bondId,
+      benefactor,
+      excessiveBasisPoints,
+      purchasePrice,
+      metadata
+    )
+
+    await expect(
+      autoBondAsBob.createBond(
+        bondId,
+        benefactor,
+        excessiveBasisPoints,
+        purchasePrice,
+        metadata
+      ).to.be.reverted(autoBond, "wrong message")
+    )
   })
 
   it("Gives Alice rights of first purchase", async () => {
-    assert(false, "Not Implemented")
+    const bondId = ethers.utils.formatBytes32String("testAliceBondId1")
+    const metadata = ethers.utils.formatBytes32String("testAliceBondMetaData1")
+    const benefactor = await alice.getAddress()
+    const basisPoints = ethers.BigNumber.from("100")
+    const initialBuyAmount = ethers.constants.WeiPerEther.mul("10")
+    const purchasePrice = ethers.constants.WeiPerEther.mul("12") // 12 bucks
+
+    await expect(() => {
+      autoBondAsAlice.createBond(
+        bondId,
+        benefactor,
+        basisPoints,
+        purchasePrice,
+        initialBuyAmount,
+        metadata
+      )}).to.changeBalance(benefactor, -50)
+
+    // Alice should have 100 of the bond's token
+    assert(
+      await autoBond.balanceOf(bondId, benefactor),
+      initialBuyAmount,
+      "Initial buy amount mismatch",
+    )
   })
 
   it("Only lets Alice change the purchase price", async () => {

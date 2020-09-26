@@ -29,6 +29,9 @@ struct Bond {
 
 ## Interface
 
+TODO: Add price funtions. Spot price, sell price, buy price for some
+amount, market cap
+
 ### Constructor
 
 ```
@@ -74,8 +77,7 @@ treasury.
 
 ### createBond
 
-Create a new bond. The bondId is intended to uniquely identify the
-license that the bond represents
+Create a new curved bond.
 
 ```
 function createBond(
@@ -83,6 +85,9 @@ function createBond(
     address benefactor,
     uint16 benefactorBasisPoints,
     uint256 purchasePrice,
+    uint256 initialPurchaseAmount,
+    string tokenName,
+    string tokenSymbol
     string memory metadata
 ) public {
 ```
@@ -107,12 +112,12 @@ Returns the current purchase price for the bond
 
 `function getPurchasePrice(bytes32 bondId) returns (uint256)`
 
-### buyBond
+### buyTokens
 
 Buys an amount of a bonds token
 
 ```
-function buyBond(
+function buyTokens(
     bytes32 bondId,
     uint256 amount,
     uint256 maxPrice
@@ -123,12 +128,12 @@ function buyBond(
 * Requires the price for minting the `amount` to be less than `maxPrice`
 * Transfers `amount` of the `reserveToken` from the caller
 
-### sellBond
+### sellTokens
 
 Sells an amount of a bonds token
 
 ```
-function sellBond(
+function sellTokens(
     bytes32 bondId,
     uint256 amount,
     uint256 minValue
@@ -139,54 +144,26 @@ function sellBond(
 * Requires the value of the sold `amount` of the bond to be higher
   than minValue
 
-### mintLicense
+### supplyOf
 
-Mint an NFT that wraps the amount of the associated bond that can be
-bought for the license purchase price.
+returns the supply of a bond by ID
 
-`function mintLicense(uint256 bondId, uint256 purchasePrice)`
+`function supplyOf(bytes32 bondId) public pure returns (uint256)`
 
-* Requires bond to exist
-* Requires `purchasePrice` to match the current purchase price for the bond
-* Transfers `bond.purchasePrice` of the `reserveToken` from the caller
+* requires bond to exist
 
-### returnLicense
+### spotPrice
 
-Burns an NFT and returns the wrapped bond tokens to the owner
+returns the current price
 
-`function returnLicense(bytes32 licenseId) public`
+`function spotPrice(bytes32 bondId) public pure returns(uint256)`
 
-* Requires the license to exist
-* Requires the caller to own the license
+* requires bond to exist
 
-### buyAndMint
+### priceOf
 
-Buys exactly enough (or a specified amount) of the bond and wraps it
-in a newly minted License for the caller
+returns the current price of some amount of token
 
-`function buyAndMint(bytes32 bondId) public`
+`function priceOf(bytes32 bondID, uint256 amount) public pure returns(uint256)`
 
-* Requires the bond to exist
-* Transfers `bond.purchasePrice` of the `reserveToken` from the caller
-
-`function buyAndMint(bytes32 bondId, uint256 amount, maxPrice) public`
-
-* Requires the callers bond balance + amount to be enough to mint a bond
-* Requires the price for minting the `amount` to be less than `maxPrice`
-* Transfers `amount` of the `reserveToken` from the caller
-
-### returnAndSell
-
-Returns the license and sells an amount of the bond token
-
-`function returnAndSell(bytes32 licenseId)`
-
-* Sells exactly the amount that was in the license
-* Requires licenseId to exist
-
-`function returnAndSell(bytes32 licenseId, amount, minValue)`
-
-* Requires the amount in the license plus the callers bond balance to
-  be greater than amount
-* Requires the value of the sold `amount` of the bond to be higher
-  than minValue
+* requires bond to exist
