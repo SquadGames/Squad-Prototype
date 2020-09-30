@@ -1,4 +1,4 @@
-# Squad (Consider the name Squad Platform)
+# Squad
 
 Decentralized marketplace for cooperative content
 
