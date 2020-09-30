@@ -90,12 +90,21 @@ contract Squad is ERC721 {
         License memory license = licenses[licenseId];
         require(license.bondId != bytes32(0), "Squad: Licence not found");
         require(
-            this.ownerOf(licenseId) == msg.sender,
+            ownerOf(licenseId) == msg.sender,
             "Squad: Only owner can redeem a license"
         );
 
-        delete licenses[licenseId];
+        ERC20(autoBond.bondAddress(license.bondId)).approve(address(autoBond), 2**256 - 1);
 
-        require(false, "Not Implimented");
+        // transfer all the claimed bond token to the caller
+        require(
+            autoBond.transferBondToken(
+                license.bondId,
+                ownerOf(licenseId),
+                license.claimAmount
+            )
+        );
+
+        _burn(licenseId);
     }
 }

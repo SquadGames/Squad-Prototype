@@ -13,6 +13,7 @@ describe('AutoBond', () => {
   let Squad
   let squad
   let reserveToken
+  let reserveTokenAsAlice
   let reserveTokenAsBob
   let reserveTokenAsCarol
   let owner
@@ -38,6 +39,7 @@ describe('AutoBond', () => {
     const ReserveToken = await ethers.getContractFactory('BondToken')
 
     reserveToken = await ReserveToken.deploy('reserveToken', 'RT')
+    reserveTokenAsAlice = reserveToken.connect(alice)
     reserveTokenAsBob = reserveToken.connect(bob)
     reserveTokenAsCarol = reserveToken.connect(carol)
     curve = await PracticalLinearCurve.deploy()
@@ -424,7 +426,6 @@ describe('AutoBond', () => {
 
     // There should be > 100 bucks in AutoBond
     const autoBondBalance = await reserveToken.balanceOf(autoBond.address)
-    console.log("autoBondBalance", asEth(autoBondBalance))
     assert(
       autoBondBalance.gt(ethers.constants.WeiPerEther.mul(100)),
       "Incorrect autoBond reserve token balance"
@@ -446,7 +447,6 @@ describe('AutoBond', () => {
 
     // Alice should have 0.98 reserve token or a little more after withdrawing
     const aliceBalance = await reserveToken.balanceOf(await alice.getAddress())
-    console.log("aliceBalance", asEth(aliceBalance))
     assert(
       aliceBalance.gte(ethers.utils.parseEther("0.98")),
       "Incorrect Alice balance after withdraw"
@@ -454,7 +454,6 @@ describe('AutoBond', () => {
 
     // The treasury gets it's shair wich should be .02
     const treasuryBalance = await reserveToken.balanceOf(await treasury.getAddress())
-    console.log("TreasuryBalance", asEth(treasuryBalance))
     assert(
       treasuryBalance.gte(ethers.utils.parseEther("0.02")),
       "Incorrect treasury balance after withdraw"
@@ -462,12 +461,211 @@ describe('AutoBond', () => {
 
   })
 
-  it("Keeps accurate accounting through buys and sells", async () => {
-    assert(false, "Not Implimented")
+  it("Mints licenses with extra tokens and redeems for them", async () => {
+    // Alice makes a bond and buys a license with much more than needed
+    const bondId = ethers.utils.formatBytes32String("testAliceBondId0")
+    const benefactor = await alice.getAddress()
+    const benefactorBasisPoints = ethers.BigNumber.from("100")
+    const purchasePrice = ethers.constants.WeiPerEther.mul("10") // 20 bucks
+    const tokenName = "testAliceTokenName"
+    const tokenSymbol = "TATS"
+    const metadata = "testAliceBondMetaData0"
+
+    await autoBondAsAlice.createBond(
+      bondId,
+      benefactor,
+      benefactorBasisPoints,
+      purchasePrice,
+      tokenName,
+      tokenSymbol,
+      metadata
+    )
+
+    const testLicenseUri = `example://metastore/${bondId}`
+    const supply = await autoBond.supplyOf(bondId)
+    const amount = practicalLinearCurveAmount(supply, purchasePrice.mul(100))
+    const maxPrice = purchasePrice.mul(100).add(ethers.utils.parseEther("1"))
+    await reserveToken.mint(await alice.getAddress(), maxPrice)
+    await reserveTokenAsAlice.approve(autoBond.address, maxPrice)
+
+    assert((await squad.totalSupply()).eq(0), "Incorrect starting supply")
+
+    await squadAsAlice.mint(
+      bondId,
+      purchasePrice,
+      maxPrice,
+      amount,
+      testLicenseUri,
+    )
+
+    assert((await squad.totalSupply()).eq(1), "Incorrect supply after mint")
+
+    const tokenId = squad.tokenOfOwnerByIndex(await alice.getAddress(), 0)
+
+    // Alice redeems her license
+    await squadAsAlice.redeem(tokenId)
+
+    // Confirm that the NFT no longer exists
+    assert((await squad.totalSupply()).eq(0), "Incorrect supply after redeem")
+    await expect(squad.ownerOf(tokenId)).to.be.revertedWith("ERC721: owner query for nonexistent token")
+
+    // Confirm that Alice's balance has the claimed bond tokens
+    assert(
+      (await autoBondAsAlice.balance(bondId)).eq(amount),
+      "Incorrect bond balance after redeem",
+    )
   })
 
-  it("Redeems licenses for the bond token", async () => {
-    assert(false, "Not Implimented")
+  it("Keeps accurate accounting through buys and sells", async () => {
+    // Alice and Bob both make conributions
+    const abondId = ethers.utils.formatBytes32String("testAliceBondId0")
+    const abenefactor = await alice.getAddress()
+    const abenefactorBasisPoints = ethers.BigNumber.from("100") // 1%
+    const apurchasePrice = ethers.constants.WeiPerEther.mul("10") // 10 bucks
+    const atokenName = "testAliceTokenName"
+    const atokenSymbol = "TATS"
+    const ametadata = "testAliceBondMetaData0"
+
+    await autoBondAsAlice.createBond(
+      abondId,
+      abenefactor,
+      abenefactorBasisPoints,
+      apurchasePrice,
+      atokenName,
+      atokenSymbol,
+      ametadata
+    )
+    const bbondId = ethers.utils.formatBytes32String("testBobBondId0")
+    const bbenefactor = await alice.getAddress()
+    const bbenefactorBasisPoints = ethers.BigNumber.from("5000") // 50%
+    const bpurchasePrice = ethers.constants.WeiPerEther.mul("2") // 2 bucks
+    const btokenName = "testBobTokenName"
+    const btokenSymbol = "TBTS"
+    const bmetadata = "testBobBondMetaData0"
+
+    await autoBondAsAlice.createBond(
+      bbondId,
+      bbenefactor,
+      bbenefactorBasisPoints,
+      bpurchasePrice,
+      btokenName,
+      btokenSymbol,
+      bmetadata
+    )
+
+    // confirm that autobond starts with zero reserve token
+    assert(
+      (await reserveToken.balanceOf(autoBond.address)).eq(0),
+      "AutoBond started with nonzero reserve token"
+    )
+
+    assert((await squad.totalSupply()).eq(0), "Incorrect starting supply")
+
+    // Everyone buys a bunch of each
+    async function mintOne(minterAddress, reserveTokenAsMinter, squadAsMinter, bondId, purchasePrice) {
+      const testLicenseUri = `example://metastore/${bondId}`
+      const supply = await autoBond.supplyOf(bondId)
+      const amount = practicalLinearCurveAmount(supply, purchasePrice)
+      const maxPrice = purchasePrice.add(ethers.utils.parseEther("1"))
+      await reserveToken.mint(minterAddress, maxPrice)
+      await reserveTokenAsMinter.approve(autoBond.address, maxPrice)
+
+      await squadAsMinter.mint(
+        bondId,
+        purchasePrice,
+        maxPrice,
+        amount,
+        testLicenseUri,
+      )
+    }
+    // alice buys 3 of each
+    await mintOne(await alice.getAddress(), reserveTokenAsAlice, squadAsAlice, abondId, apurchasePrice)
+    await mintOne(await alice.getAddress(), reserveTokenAsAlice, squadAsAlice, abondId, apurchasePrice)
+    await mintOne(await alice.getAddress(), reserveTokenAsAlice, squadAsAlice, abondId, apurchasePrice)
+    await mintOne(await alice.getAddress(), reserveTokenAsAlice, squadAsAlice, bbondId, bpurchasePrice)
+    await mintOne(await alice.getAddress(), reserveTokenAsAlice, squadAsAlice, bbondId, bpurchasePrice)
+    await mintOne(await alice.getAddress(), reserveTokenAsAlice, squadAsAlice, bbondId, bpurchasePrice)
+
+    // Bob buys 1 of each
+    await mintOne(await bob.getAddress(), reserveTokenAsBob, squadAsBob, abondId, apurchasePrice)
+    await mintOne(await bob.getAddress(), reserveTokenAsBob, squadAsBob, bbondId, bpurchasePrice)
+
+    // Carol buys 2 of each
+    await mintOne(await carol.getAddress(), reserveTokenAsCarol, squadAsCarol, abondId, apurchasePrice)
+    await mintOne(await carol.getAddress(), reserveTokenAsCarol, squadAsCarol, abondId, apurchasePrice)
+    await mintOne(await carol.getAddress(), reserveTokenAsCarol, squadAsCarol, bbondId, bpurchasePrice)
+    await mintOne(await carol.getAddress(), reserveTokenAsCarol, squadAsCarol, bbondId, bpurchasePrice)
+
+    // confirm that autobond has the right amount of reserve token
+    // 6 of each were bought so autobond should have >= 6*apurchasePrice + 6*bpurchasePrice
+    assert(
+      (await reserveToken.balanceOf(autoBond.address)).gte(apurchasePrice.mul(6).add(bpurchasePrice.mul(6))),
+      "Incorrect autoBond reserveToken balance after mints"
+    )
+
+    // everyone redeems all their licenses
+    async function redeemOne(redeemerAddress, squadAsRedeemer, tokenIndex) {
+      const licenseId = await squadAsRedeemer.tokenOfOwnerByIndex(redeemerAddress, tokenIndex)
+      return squadAsRedeemer.redeem(licenseId)
+    }
+    await redeemOne(await alice.getAddress(), squadAsAlice, 0)
+    await redeemOne(await alice.getAddress(), squadAsAlice, 0)
+    await redeemOne(await alice.getAddress(), squadAsAlice, 0)
+    await redeemOne(await alice.getAddress(), squadAsAlice, 0)
+    await redeemOne(await alice.getAddress(), squadAsAlice, 0)
+
+    await redeemOne(await alice.getAddress(), squadAsAlice, 0)
+
+    await redeemOne(await bob.getAddress(), squadAsBob, 0)
+    await redeemOne(await bob.getAddress(), squadAsBob, 0)
+
+    await redeemOne(await carol.getAddress(), squadAsCarol, 0)
+    await redeemOne(await carol.getAddress(), squadAsCarol, 0)
+    await redeemOne(await carol.getAddress(), squadAsCarol, 0)
+    await redeemOne(await carol.getAddress(), squadAsCarol, 0)
+
+    // confirm that squad has almost no bond tokens
+    assert((await autoBond.balanceOf(abondId, squad.address)).eq(0),
+          "Squad A bond balance too high" )
+    assert((await autoBond.balanceOf(bbondId, squad.address)).eq(0),
+          "Squad B bond balance too high")
+
+    // everyone sells their bond tokens
+    function sellAllBondTokens(bondIds, autoBondAsSeller) {
+      bondIds.forEach((bondId) => {
+        const amount = autoBondAsSeller.balance(bondId)
+        autoBondAsSeller.sellTokens(bondId, amount, 0)
+      })
+    }
+
+    sellAllBondTokens([abondId, bbondId], autoBondAsAlice)
+    sellAllBondTokens([abondId, bbondId], autoBondAsBob)
+    sellAllBondTokens([abondId, bbondId], autoBondAsCarol)
+
+    console.log(asEth(await autoBondAsAlice.accountBalance()))
+    console.log(asEth(await autoBondAsBob.accountBalance()))
+    await autoBondAsAlice.withdraw()
+    await autoBondAsBob.withdraw()
+
+    // confirm that autoBond has almost no reserveToken
+    console.log(asEth(await reserveToken.balanceOf(autoBond.address)))
+    assert((await reserveToken.balanceOf(autoBond.address)).eq(0),
+           "AutoBond left with too much reserve token after sale")
+
+    // confirm that the total reserve token holdings of autoBond,
+    // Alice, Bob, and Carol is close to the purchase price of 6 of
+    // each license (plus the 6 token buffer for max price).
+    const aliceTotal = await reserveToken.balanceOf(await alice.getAddress())
+    const bobTotal = await reserveToken.balanceOf(await bob.getAddress())
+    const carolTotal = await reserveToken.balanceOf(await carol.getAddress())
+    const treasuryTotal = await reserveToken.balanceOf(await treasury.getAddress())
+
+    assert(
+      aliceTotal.add(bobTotal).add(carolTotal).add(treasuryTotal).eq(
+        apurchasePrice.mul(6).add(bpurchasePrice.mul(6)).add(ethers.utils.parseEther("5"))
+      ),
+      "Balances don't add up after buys, sells, and withdraws"
+    )
   })
 
   // Curating

@@ -31,6 +31,8 @@ contract AutoBond is Ownable {
 
     Curve public curve;
 
+    // TODO add licenseAgreementURI to bond struct. It's the agreement
+    // that the contributor (and copywrite holder) is offering
     struct Bond {
         // benefactor may claim the surplus for this bond
         address benefactor;
@@ -253,7 +255,10 @@ contract AutoBond is Ownable {
             bonds[bondId].token.totalSupply() >= amount,
             "not enough supply"
         );
-        require(false, "Seller doesn't own enough to sell");
+        require(
+                balanceOf(bondId, msg.sender) >= amount,
+                "Seller doesn't own enough to sell"
+                );
 
         Bond storage bond = bonds[bondId];
         uint256 subtotalValue = curve.price(
@@ -286,6 +291,14 @@ contract AutoBond is Ownable {
         return bonds[bondId].token.transferFrom(from, to, amount);
     }
 
+    function transferBondToken(
+        bytes32 bondId,
+        address to,
+        uint256 amount
+    ) public returns (bool) {
+        return transferBondTokenFrom(bondId, msg.sender, to, amount);
+    }
+
     function transferReserveTokenFrom(
         address from,
         address to,
@@ -304,7 +317,15 @@ contract AutoBond is Ownable {
         return bonds[bondId].token.balanceOf(owner);
     }
 
-    function accountBalanceOf(address beneficiary) public view returns (uint256) {
+    function balance(bytes32 bondId) public view returns (uint256) {
+        return balanceOf(bondId, msg.sender);
+    }
+
+    function accountBalanceOf(address beneficiary)
+        public
+        view
+        returns (uint256)
+    {
         return accounts[beneficiary];
     }
 
