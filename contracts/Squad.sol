@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "./AutoBond.sol";
 import "./BondToken.sol";
+import "@nomiclabs/buidler/console.sol";
 
 contract Squad is ERC721 {
     using Counters for Counters.Counter;
@@ -24,11 +25,24 @@ contract Squad is ERC721 {
     constructor(
         address _autoBond,
         string memory name,
-        string memory ticker
-    ) public ERC721(name, ticker) {
+        string memory symbol
+    ) public ERC721(name, symbol) {
         require(_autoBond != address(0), "Squad: _autoBond address required");
         autoBond = AutoBond(_autoBond);
+        ERC20(autoBond.reserveToken()).approve(_autoBond, 2**256 - 1);
     }
+
+    function renewApproval() public {
+        ERC20(autoBond.reserveToken()).approve(address(autoBond), 2**256 - 1);
+    }
+
+    event NewLicense(
+        uint256 id,
+        address owner,
+        bytes32 bondId,
+        uint256 amount,
+        string licenseURI
+    );
 
     function mint(
         bytes32 bondId,
@@ -44,35 +58,30 @@ contract Squad is ERC721 {
             "Squad: Can't mint licence for non-existent bond"
         );
         require(
-            autoBond.purchasePriceOf(bondId) == purchasePrice,
+            autoBond.licensePriceOf(bondId) == purchasePrice,
             "Squad: purchasePrice mismatch"
         );
-        uint256 price = autoBond.priceOf(bondId, amount);
+        uint256 price = autoBond.tokenPriceOf(bondId, amount);
         require(price >= purchasePrice, "Squad: amount too low");
-        require(price <= maxPrice, "Squad: price too high");
+        require(price <= maxPrice, "Squad: price higher than maxPrice");
 
         _tokenIds.increment();
         uint256 newLicenseId = _tokenIds.current();
         _mint(msg.sender, newLicenseId);
         _setTokenURI(newLicenseId, licenseURI);
 
-        // transfer purchasePrice worth of the reserve token from msg sender to Squad
+        // transfer purchasePrice worth of the reserve token from msg
+        // sender to Squad
         require(
-            autoBond.transferBondTokenFrom(
-                bondId,
-                msg.sender,
-                address(this),
-                purchasePrice
-            )
+            autoBond.transferReserveTokenFrom(msg.sender, address(this), price)
         );
 
         // Spend it on minting new bond tokens
-        autoBond.buyTokens(bondId, amount, purchasePrice);
+        autoBond.buyTokens(bondId, amount, maxPrice);
 
-        licenses[newLicenseId] = License({
-            bondId: bondId,
-            claimAmount: amount
-        });
+        licenses[newLicenseId] = License({bondId: bondId, claimAmount: amount});
+
+        emit NewLicense(newLicenseId, msg.sender, bondId, amount, licenseURI);
 
         return newLicenseId;
     }
@@ -86,5 +95,7 @@ contract Squad is ERC721 {
         );
 
         delete licenses[licenseId];
+
+        require(false, "Not Implimented");
     }
 }

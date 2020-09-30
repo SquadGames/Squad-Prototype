@@ -25,3 +25,13 @@ Decentralized marketplace for cooperative content
   * UX components
   * Purchase/ownership confirmation
   * Possibly fiat on/off ramp services
+
+## Notes
+
+* Licenses (NFTs) should link to definitions
+* Definitions should include either full licenses or links to broadly
+  published licenses
+
+* Constant purchase prices imply that any bond curve that the network
+  accepts needs to publish for clients a method for calculating the
+  amount given a price and supply

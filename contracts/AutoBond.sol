@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "./Curve.sol";
 import "./BondToken.sol";
+import "@nomiclabs/buidler/console.sol";
 
 contract AutoBond is Ownable {
     using SafeMath for uint256;
@@ -129,7 +130,6 @@ contract AutoBond is Ownable {
         address benefactor,
         uint16 benefactorBasisPoints,
         uint256 purchasePrice,
-        uint256 initialPurchaseAmount,
         string memory tokenName,
         string memory tokenSymbol,
         string memory metadata
@@ -149,8 +149,6 @@ contract AutoBond is Ownable {
         newBond.benefactorBasisPoints = benefactorBasisPoints;
         newBond.purchasePrice = purchasePrice;
         newBond.token = new BondToken(tokenName, tokenSymbol);
-
-        // TODO buy initial purchase amount on behalf of msg.sender
 
         emit NewBond(
             bondId,
@@ -187,7 +185,7 @@ contract AutoBond is Ownable {
     {
         uint256 fee;
         uint256 remainder;
-        fee = total.mul(basisPoints).div(1000);
+        fee = total.mul(basisPoints).div(10000);
         remainder = total - fee;
         return (fee, remainder);
     }
@@ -214,7 +212,6 @@ contract AutoBond is Ownable {
         require(bond.benefactor != address(0), "AutoBond: Bond does not exist");
         uint256 totalPrice = curve.price(bond.token.totalSupply(), amount);
         require(totalPrice <= maxPrice, "AutoBond: price higher than maxPrice");
-
         // Charge the sender totalPrice
         require(
             reserveToken.transferFrom(msg.sender, address(this), totalPrice)
@@ -225,7 +222,7 @@ contract AutoBond is Ownable {
         uint256 _;
         (benefactorFee, _) = _calculateFeeSplit(
             bond.benefactorBasisPoints,
-            amount
+            totalPrice
         );
         accounts[bond.benefactor] = accounts[bond.benefactor].add(
             benefactorFee
@@ -285,8 +282,16 @@ contract AutoBond is Ownable {
         address from,
         address to,
         uint256 amount
-                                   ) public returns (bool) {
+    ) public returns (bool) {
         return bonds[bondId].token.transferFrom(from, to, amount);
+    }
+
+    function transferReserveTokenFrom(
+        address from,
+        address to,
+        uint256 amount
+    ) public returns (bool) {
+        return reserveToken.transferFrom(from, to, amount);
     }
 
     function balanceOf(bytes32 bondId, address owner)
@@ -299,16 +304,24 @@ contract AutoBond is Ownable {
         return bonds[bondId].token.balanceOf(owner);
     }
 
+    function accountBalanceOf(address beneficiary) public view returns (uint256) {
+        return accounts[beneficiary];
+    }
+
+    function accountBalance() public view returns (uint256) {
+        return accountBalanceOf(msg.sender);
+    }
+
     function supplyOf(bytes32 bondId) public view returns (uint256) {
         require(exists(bondId), "AutoBond: bond does not exist");
         return bonds[bondId].token.totalSupply();
     }
 
     function spotPrice(bytes32 bondId) public view returns (uint256) {
-        return priceOf(bondId, 1);
+        return tokenPriceOf(bondId, 1);
     }
 
-    function priceOf(bytes32 bondId, uint256 amount)
+    function tokenPriceOf(bytes32 bondId, uint256 amount)
         public
         view
         returns (uint256)
@@ -317,12 +330,16 @@ contract AutoBond is Ownable {
         return curve.price(bonds[bondId].token.totalSupply(), amount);
     }
 
-    function purchasePriceOf(bytes32 bondId) public view returns (uint256) {
+    function licensePriceOf(bytes32 bondId) public view returns (uint256) {
         require(exists(bondId), "AutoBond: bond does not exist");
         return bonds[bondId].purchasePrice;
     }
 
     function exists(bytes32 bondId) public view returns (bool) {
         return bonds[bondId].benefactor != address(0);
+    }
+
+    function bondAddress(bytes32 bondId) public view returns (address) {
+        return address(bonds[bondId].token);
     }
 }
