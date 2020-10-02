@@ -8,6 +8,7 @@ import "./AutoBond.sol";
 import "./BondToken.sol";
 import "@nomiclabs/buidler/console.sol";
 
+// TODO Change the name to Licence something or other
 contract Squad is ERC721 {
     using Counters for Counters.Counter;
 
@@ -51,7 +52,7 @@ contract Squad is ERC721 {
         uint256 amount, // client needs to calculate the amount that
         // will give a close enough price to the
         // purchase price
-        string memory licenseURI
+        string memory licenseURI // TODO move this out of here
     ) public returns (uint256) {
         require(
             autoBond.exists(bondId),
@@ -79,6 +80,7 @@ contract Squad is ERC721 {
         // Spend it on minting new bond tokens
         autoBond.buyTokens(bondId, amount, maxPrice);
 
+        // TODO chance license to be claim
         licenses[newLicenseId] = License({bondId: bondId, claimAmount: amount});
 
         emit NewLicense(newLicenseId, msg.sender, bondId, amount, licenseURI);
@@ -94,6 +96,7 @@ contract Squad is ERC721 {
             "Squad: Only owner can redeem a license"
         );
 
+        // TODO consider calling this bondTokenAddress
         ERC20(autoBond.bondAddress(license.bondId)).approve(address(autoBond), 2**256 - 1);
 
         // transfer all the claimed bond token to the caller

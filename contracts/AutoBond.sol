@@ -25,6 +25,7 @@ contract AutoBond is Ownable {
 
     // accounts hold funds that may be withdrawn
     mapping(address => uint256) public accounts;
+    uint256 accountsTotal;
 
     // ERC20 token backing the bonds
     ERC20 public reserveToken;
@@ -42,7 +43,7 @@ contract AutoBond is Ownable {
         // purchasePrice is emitted in the purchase event so clients can
         // check whether how much a user needs to have for a calid
         // purchase
-        // TODO factor this out into the Squad contract
+        // TODO maybe factor this out into the Squad contract
         uint256 purchasePrice;
         BondToken token;
     }
@@ -105,13 +106,18 @@ contract AutoBond is Ownable {
         // calculate the network fee
         uint256 networkFee;
         uint256 benefactorTotal;
-        (networkFee, benefactorTotal) = _calculateFeeSplit(
+        uint256 dust;
+        (networkFee, benefactorTotal, dust) = _calculateFeeSplit(
             networkFeeBasisPoints,
             accounts[benefactor]
         );
+        benefactorTotal = benefactorTotal.add(dust);
 
         // transfer the account total minus the network fee to the benefactor
         require(reserveToken.transfer(benefactor, benefactorTotal));
+        accounts[benefactor] = accounts[benefactor].sub(
+            benefactorTotal.add(networkFee));
+        accountsTotal = accountsTotal.sub(benefactorTotal.add(networkFee));
 
         // transfer the fee to the treasury
         require(reserveToken.transfer(treasury, networkFee));
@@ -135,6 +141,7 @@ contract AutoBond is Ownable {
         string memory tokenName,
         string memory tokenSymbol,
         string memory metadata
+        // TODO move License URI here
     ) public {
         require(
             benefactor != address(0),
@@ -183,13 +190,15 @@ contract AutoBond is Ownable {
     function _calculateFeeSplit(uint16 basisPoints, uint256 total)
         internal
         pure
-        returns (uint256, uint256)
+        returns (uint256, uint256, uint256)
     {
         uint256 fee;
+        uint256 dust;
         uint256 remainder;
         fee = total.mul(basisPoints).div(10000);
-        remainder = total - fee;
-        return (fee, remainder);
+        dust = total.mul(basisPoints).mod(10000);
+        remainder = (total - fee) - dust;
+        return (fee, remainder, dust);
     }
 
     // Purchase is emitted on all bond purchases, and includes enough
@@ -221,14 +230,16 @@ contract AutoBond is Ownable {
 
         // add benefactor fee to the benefactor's account
         uint256 benefactorFee;
-        uint256 _;
-        (benefactorFee, _) = _calculateFeeSplit(
+        uint256 reserveTotal;
+        uint256 dust;
+        (benefactorFee, reserveTotal, dust) = _calculateFeeSplit(
             bond.benefactorBasisPoints,
             totalPrice
         );
         accounts[bond.benefactor] = accounts[bond.benefactor].add(
-            benefactorFee
+           benefactorFee.add(dust)
         );
+        accountsTotal = accountsTotal.add(benefactorFee.add(dust));
 
         // mint the new supply for the purchaser
         bond.token.mint(msg.sender, amount);
@@ -266,16 +277,17 @@ contract AutoBond is Ownable {
             amount
         );
 
-        uint256 _;
-        uint256 totalValue;
-        (_, totalValue) = _calculateFeeSplit(
+        uint256 benefactorFee;
+        uint256 sellerValue;
+        uint256 dust;
+        (benefactorFee, sellerValue, dust) = _calculateFeeSplit(
             bond.benefactorBasisPoints,
             subtotalValue
         );
-        require(totalValue >= minValue, "AutoBond: value lower than minValue");
+        require(sellerValue >= minValue, "AutoBond: value lower than minValue");
         bond.token.burn(msg.sender, amount);
         require(
-            reserveToken.transfer(msg.sender, totalValue),
+            reserveToken.transfer(msg.sender, sellerValue),
             "AutoBond: reserve transfer error"
         );
 
@@ -304,6 +316,8 @@ contract AutoBond is Ownable {
         address to,
         uint256 amount
     ) public returns (bool) {
+        require(from != address(this), "Illegal transfer from this contract");
+        require(to != address(this), "Illegal transfer to this contract");
         return reserveToken.transferFrom(from, to, amount);
     }
 
@@ -362,5 +376,13 @@ contract AutoBond is Ownable {
 
     function bondAddress(bytes32 bondId) public view returns (address) {
         return address(bonds[bondId].token);
+    }
+
+    function reserveDust() public view returns (uint256) {
+        return reserveToken.balanceOf(address(this)).sub(accountsTotal);
+    }
+
+    function recoverReserveDust() public {
+        reserveToken.transfer(treasury, reserveDust());
     }
 }
