@@ -35,11 +35,11 @@ contract AutoBond is Ownable {
     // TODO add licenseAgreementURI to bond struct. It's the agreement
     // that the contributor (and copywrite holder) is offering
     struct Bond {
-        // benefactor may claim the surplus for this bond
-        address benefactor;
+        // beneficiary may claim the surplus for this bond
+        address beneficiary;
         // basis points taken out of every sale as surplus for the
-        // benefactor
-        uint16 benefactorBasisPoints;
+        // beneficiary
+        uint16 beneficiaryBasisPoints;
         // purchasePrice is emitted in the purchase event so clients can
         // check whether how much a user needs to have for a calid
         // purchase
@@ -99,25 +99,25 @@ contract AutoBond is Ownable {
         withdrawFor(msg.sender);
     }
 
-    function withdrawFor(address benefactor) public {
-        require(benefactor != address(0), "benefactor address required");
-        require(accounts[benefactor] > 0, "Nothing to withdraw");
+    function withdrawFor(address beneficiary) public {
+        require(beneficiary != address(0), "beneficiary address required");
+        require(accounts[beneficiary] > 0, "Nothing to withdraw");
 
         // calculate the network fee
         uint256 networkFee;
-        uint256 benefactorTotal;
+        uint256 beneficiaryTotal;
         uint256 dust;
-        (networkFee, benefactorTotal, dust) = _calculateFeeSplit(
+        (networkFee, beneficiaryTotal, dust) = _calculateFeeSplit(
             networkFeeBasisPoints,
-            accounts[benefactor]
+            accounts[beneficiary]
         );
-        benefactorTotal = benefactorTotal.add(dust);
+        beneficiaryTotal = beneficiaryTotal.add(dust);
 
-        // transfer the account total minus the network fee to the benefactor
-        require(reserveToken.transfer(benefactor, benefactorTotal));
-        accounts[benefactor] = accounts[benefactor].sub(
-            benefactorTotal.add(networkFee));
-        accountsTotal = accountsTotal.sub(benefactorTotal.add(networkFee));
+        // transfer the account total minus the network fee to the beneficiary
+        require(reserveToken.transfer(beneficiary, beneficiaryTotal));
+        accounts[beneficiary] = accounts[beneficiary].sub(
+            beneficiaryTotal.add(networkFee));
+        accountsTotal = accountsTotal.sub(beneficiaryTotal.add(networkFee));
 
         // transfer the fee to the treasury
         require(reserveToken.transfer(treasury, networkFee));
@@ -127,16 +127,16 @@ contract AutoBond is Ownable {
     // add arbitrary metadata for clients to build catalogs from
     event NewBond(
         bytes32 bondId,
-        address benefactor,
-        uint16 benefactorBasisPoints,
+        address beneficiary,
+        uint16 beneficiaryBasisPoints,
         uint256 purchasePrice,
         string metadata
     );
 
     function createBond(
         bytes32 bondId,
-        address benefactor,
-        uint16 benefactorBasisPoints,
+        address beneficiary,
+        uint16 beneficiaryBasisPoints,
         uint256 purchasePrice,
         string memory tokenName,
         string memory tokenSymbol,
@@ -144,25 +144,25 @@ contract AutoBond is Ownable {
         // TODO move License URI here
     ) public {
         require(
-            benefactor != address(0),
-            "AutoBond: Benefactor address required"
+            beneficiary != address(0),
+            "AutoBond: Beneficiary address required"
         );
         require(
-            benefactorBasisPoints <= 10000,
-            "AutoBond: benefactorBasisPoints greater than 100%"
+            beneficiaryBasisPoints <= 10000,
+            "AutoBond: beneficiaryBasisPoints greater than 100%"
         );
         require(!exists(bondId), "AutoBond: Bond already exists");
 
         Bond storage newBond = bonds[bondId];
-        newBond.benefactor = benefactor;
-        newBond.benefactorBasisPoints = benefactorBasisPoints;
+        newBond.beneficiary = beneficiary;
+        newBond.beneficiaryBasisPoints = beneficiaryBasisPoints;
         newBond.purchasePrice = purchasePrice;
         newBond.token = new BondToken(tokenName, tokenSymbol);
 
         emit NewBond(
             bondId,
-            benefactor,
-            benefactorBasisPoints,
+            beneficiary,
+            beneficiaryBasisPoints,
             purchasePrice,
             metadata
         );
@@ -176,8 +176,8 @@ contract AutoBond is Ownable {
         uint256 newPrice
     ) public {
         require(
-            bonds[bondId].benefactor == msg.sender,
-            "AutoBond: only the benefactor can set a purchase price"
+            bonds[bondId].beneficiary == msg.sender,
+            "AutoBond: only the beneficiary can set a purchase price"
         );
         require(
             bonds[bondId].purchasePrice == currentPrice,
@@ -220,7 +220,7 @@ contract AutoBond is Ownable {
     ) public {
         // get the total price for the amount
         Bond storage bond = bonds[bondId];
-        require(bond.benefactor != address(0), "AutoBond: Bond does not exist");
+        require(bond.beneficiary != address(0), "AutoBond: Bond does not exist");
         uint256 totalPrice = curve.price(bond.token.totalSupply(), amount);
         require(totalPrice <= maxPrice, "AutoBond: price higher than maxPrice");
         // Charge the sender totalPrice
@@ -228,18 +228,18 @@ contract AutoBond is Ownable {
             reserveToken.transferFrom(msg.sender, address(this), totalPrice)
         );
 
-        // add benefactor fee to the benefactor's account
-        uint256 benefactorFee;
+        // add beneficiary fee to the beneficiary's account
+        uint256 beneficiaryFee;
         uint256 reserveTotal;
         uint256 dust;
-        (benefactorFee, reserveTotal, dust) = _calculateFeeSplit(
-            bond.benefactorBasisPoints,
+        (beneficiaryFee, reserveTotal, dust) = _calculateFeeSplit(
+            bond.beneficiaryBasisPoints,
             totalPrice
         );
-        accounts[bond.benefactor] = accounts[bond.benefactor].add(
-           benefactorFee.add(dust)
+        accounts[bond.beneficiary] = accounts[bond.beneficiary].add(
+           beneficiaryFee.add(dust)
         );
-        accountsTotal = accountsTotal.add(benefactorFee.add(dust));
+        accountsTotal = accountsTotal.add(beneficiaryFee.add(dust));
 
         // mint the new supply for the purchaser
         bond.token.mint(msg.sender, amount);
@@ -260,7 +260,7 @@ contract AutoBond is Ownable {
         uint256 amount,
         uint256 minValue
     ) public {
-        // sell curve = buy curve scaled down by bond.benefactorBasisPoints
+        // sell curve = buy curve scaled down by bond.beneficiaryBasisPoints
         require(exists(bondId), "AutoBond: Bond does not exist");
         require(
             bonds[bondId].token.totalSupply() >= amount,
@@ -277,11 +277,11 @@ contract AutoBond is Ownable {
             amount
         );
 
-        uint256 benefactorFee;
+        uint256 beneficiaryFee;
         uint256 sellerValue;
         uint256 dust;
-        (benefactorFee, sellerValue, dust) = _calculateFeeSplit(
-            bond.benefactorBasisPoints,
+        (beneficiaryFee, sellerValue, dust) = _calculateFeeSplit(
+            bond.beneficiaryBasisPoints,
             subtotalValue
         );
         require(sellerValue >= minValue, "AutoBond: value lower than minValue");
@@ -371,7 +371,7 @@ contract AutoBond is Ownable {
     }
 
     function exists(bytes32 bondId) public view returns (bool) {
-        return bonds[bondId].benefactor != address(0);
+        return bonds[bondId].beneficiary != address(0);
     }
 
     function bondAddress(bytes32 bondId) public view returns (address) {

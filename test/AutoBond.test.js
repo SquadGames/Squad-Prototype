@@ -138,8 +138,8 @@ describe('AutoBond', () => {
 
   it('Lets Alice make and administer a new bond', async () => {
     const bondId = ethers.utils.formatBytes32String('testAliceBondId0')
-    const benefactor = alice
-    const benefactorBasisPoints = ethers.BigNumber.from('179')
+    const beneficiary = alice
+    const beneficiaryBasisPoints = ethers.BigNumber.from('179')
     const purchasePrice = ethers.constants.WeiPerEther.mul('10') // 10 bucks
     const tokenName = 'testAliceTokenName'
     const tokenSymbol = 'TATS'
@@ -148,8 +148,8 @@ describe('AutoBond', () => {
     await expect(
       autoBondAsAlice.createBond(
         bondId,
-        benefactor,
-        benefactorBasisPoints,
+        beneficiary,
+        beneficiaryBasisPoints,
         purchasePrice,
         tokenName,
         tokenSymbol,
@@ -157,8 +157,8 @@ describe('AutoBond', () => {
       )
     ).to.emit(autoBond, 'NewBond').withArgs(
       bondId,
-      benefactor,
-      benefactorBasisPoints,
+      beneficiary,
+      beneficiaryBasisPoints,
       purchasePrice,
       metadata
     )
@@ -181,15 +181,15 @@ describe('AutoBond', () => {
     const bobsPurchasePrice = ethers.constants.WeiPerEther
     await expect(
       autoBondAsBob.setPurchasePrice(bondId, newPurchasePrice, bobsPurchasePrice)
-    ).to.be.revertedWith('AutoBond: only the benefactor can set a purchase price')
+    ).to.be.revertedWith('AutoBond: only the beneficiary can set a purchase price')
 
     // The bond was set up correctly
     const alicesBond = await autoBondAsCarol.bonds(bondId)
     const alicesAddress = alice
     const cases = [
       ['supply', '0', (await autoBondAsCarol.supplyOf(bondId)).toString()],
-      ['benefactor', alicesAddress, alicesBond.benefactor],
-      ['benefactorBasisPoints', benefactorBasisPoints.toString(), alicesBond.benefactorBasisPoints.toString()],
+      ['beneficiary', alicesAddress, alicesBond.beneficiary],
+      ['beneficiaryBasisPoints', beneficiaryBasisPoints.toString(), alicesBond.beneficiaryBasisPoints.toString()],
       ['purchasePrice', newPurchasePrice.toString(), alicesBond.purchasePrice.toString()]
     ]
 
@@ -202,7 +202,7 @@ describe('AutoBond', () => {
 
   it('Rejects new bonds with basis points totalling more than 100%', async () => {
     const bondId = ethers.utils.formatBytes32String('testBobBondId0')
-    const benefactor = bob
+    const beneficiary = bob
     const allowedBasisPoints = ethers.BigNumber.from('10000')
     const excessiveBasisPoints = ethers.BigNumber.from('10001')
     const purchasePrice = ethers.constants.WeiPerEther.mul('10') // 10 bucks
@@ -212,7 +212,7 @@ describe('AutoBond', () => {
 
     await autoBondAsBob.createBond(
       bondId,
-      benefactor,
+      beneficiary,
       allowedBasisPoints,
       purchasePrice,
       tokenName,
@@ -223,20 +223,20 @@ describe('AutoBond', () => {
     await expect(
       autoBondAsBob.createBond(
         bondId,
-        benefactor,
+        beneficiary,
         excessiveBasisPoints,
         purchasePrice,
         tokenName,
         tokenSymbol,
         metadata
       )
-    ).to.be.revertedWith('AutoBond: benefactorBasisPoints greater than 100%')
+    ).to.be.revertedWith('AutoBond: beneficiaryBasisPoints greater than 100%')
   })
 
   it.skip('Gives Alice rights of first purchase', async () => {
     const bondId = ethers.utils.formatBytes32String('testAliceBondId1')
     const metadata = ethers.utils.formatBytes32String('testAliceBondMetaData1')
-    const benefactor = alice
+    const beneficiary = alice
     const basisPoints = ethers.BigNumber.from('100')
     const initialBuyAmount = ethers.constants.WeiPerEther.mul('10')
     const purchasePrice = ethers.constants.WeiPerEther.mul('12') // 12 bucks
@@ -244,17 +244,17 @@ describe('AutoBond', () => {
     await expect(() => {
       autoBondAsAlice.createBond(
         bondId,
-        benefactor,
+        beneficiary,
         basisPoints,
         purchasePrice,
         initialBuyAmount,
         metadata
       )
-    }).to.changeBalance(benefactor, -50)
+    }).to.changeBalance(beneficiary, -50)
 
     // Alice should have 100 of the bond's token
     assert(
-      await autoBond.balanceOf(bondId, benefactor),
+      await autoBond.balanceOf(bondId, beneficiary),
       initialBuyAmount,
       'Initial buy amount mismatch'
     )
@@ -264,7 +264,7 @@ describe('AutoBond', () => {
     assert(false, 'Not Implemented')
   })
 
-  it.skip('Lets only Alice change the benefactor', async () => {
+  it.skip('Lets only Alice change the beneficiary', async () => {
     assert(false, 'Not Implemented')
   })
 
@@ -272,8 +272,8 @@ describe('AutoBond', () => {
   it('Lets Bob mint a license for themself', async () => {
     // Set Up
     const bondId = ethers.utils.formatBytes32String('testAliceBondId0')
-    const benefactor = alice
-    const benefactorBasisPoints = ethers.BigNumber.from('179')
+    const beneficiary = alice
+    const beneficiaryBasisPoints = ethers.BigNumber.from('179')
     const purchasePrice = ethers.constants.WeiPerEther.mul('10') // 10 bucks
     const tokenName = 'testAliceTokenName'
     const tokenSymbol = 'TATS'
@@ -281,8 +281,8 @@ describe('AutoBond', () => {
 
     await autoBondAsAlice.createBond(
       bondId,
-      benefactor,
-      benefactorBasisPoints,
+      beneficiary,
+      beneficiaryBasisPoints,
       purchasePrice,
       tokenName,
       tokenSymbol,
@@ -375,13 +375,13 @@ describe('AutoBond', () => {
     })
   })
 
-  it('Lets benefactor withdraw their share and pay network fees', async () => {
+  it('Lets beneficiary withdraw their share and pay network fees', async () => {
     // set up
 
-    // Alice makes a bond with benefactor basis points
+    // Alice makes a bond with beneficiary basis points
     const bondId = ethers.utils.formatBytes32String('testAliceBondId0')
-    const benefactor = alice
-    const benefactorBasisPoints = ethers.BigNumber.from('100')
+    const beneficiary = alice
+    const beneficiaryBasisPoints = ethers.BigNumber.from('100')
     const purchasePrice = ethers.constants.WeiPerEther.mul('10') // 20 bucks
     const tokenName = 'testAliceTokenName'
     const tokenSymbol = 'TATS'
@@ -389,8 +389,8 @@ describe('AutoBond', () => {
 
     await autoBondAsAlice.createBond(
       bondId,
-      benefactor,
-      benefactorBasisPoints,
+      beneficiary,
+      beneficiaryBasisPoints,
       purchasePrice,
       tokenName,
       tokenSymbol,
@@ -471,8 +471,8 @@ describe('AutoBond', () => {
   it('Mints licenses with extra tokens and redeems for them', async () => {
     // Alice makes a bond and buys a license with much more than needed
     const bondId = ethers.utils.formatBytes32String('testAliceBondId0')
-    const benefactor = alice
-    const benefactorBasisPoints = ethers.BigNumber.from('100')
+    const beneficiary = alice
+    const beneficiaryBasisPoints = ethers.BigNumber.from('100')
     const purchasePrice = ethers.constants.WeiPerEther.mul('10') // 20 bucks
     const tokenName = 'testAliceTokenName'
     const tokenSymbol = 'TATS'
@@ -480,8 +480,8 @@ describe('AutoBond', () => {
 
     await autoBondAsAlice.createBond(
       bondId,
-      benefactor,
-      benefactorBasisPoints,
+      beneficiary,
+      beneficiaryBasisPoints,
       purchasePrice,
       tokenName,
       tokenSymbol,
@@ -526,8 +526,8 @@ describe('AutoBond', () => {
   it('Keeps accurate accounting through buys and sells', async () => {
     // Alice and Bob both make conributions
     const aliceBondId = ethers.utils.formatBytes32String('testAliceBondId0')
-    const aliceBenefactor = alice
-    const aliceBenefactorBasisPoints = ethers.BigNumber.from('100') // 1%
+    const aliceBeneficiary = alice
+    const aliceBeneficiaryBasisPoints = ethers.BigNumber.from('100') // 1%
     const alicePurchasePrice = ethers.constants.WeiPerEther.mul('10') // 10 bucks
     const aliceTokenName = 'testAliceTokenName'
     const aliceTokenSymbol = 'TATS'
@@ -535,16 +535,16 @@ describe('AutoBond', () => {
 
     await autoBondAsAlice.createBond(
       aliceBondId,
-      aliceBenefactor,
-      aliceBenefactorBasisPoints,
+      aliceBeneficiary,
+      aliceBeneficiaryBasisPoints,
       alicePurchasePrice,
       aliceTokenName,
       aliceTokenSymbol,
       aliceMetadata
     )
     const bobBondId = ethers.utils.formatBytes32String('testBobBondId0')
-    const bobBenefactor = bob
-    const bobBenefactorBasisPoints = ethers.BigNumber.from('5000') // 50%
+    const bobBeneficiary = bob
+    const bobBeneficiaryBasisPoints = ethers.BigNumber.from('5000') // 50%
     const bobPurchasePrice = ethers.constants.WeiPerEther.mul('2') // 2 bucks
     const bobTokenName = 'testBobTokenName'
     const bobTokenSymbol = 'TBTS'
@@ -552,8 +552,8 @@ describe('AutoBond', () => {
 
     await autoBondAsAlice.createBond(
       bobBondId,
-      bobBenefactor,
-      bobBenefactorBasisPoints,
+      bobBeneficiary,
+      bobBeneficiaryBasisPoints,
       bobPurchasePrice,
       bobTokenName,
       bobTokenSymbol,
