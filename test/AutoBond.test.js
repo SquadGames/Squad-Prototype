@@ -1,16 +1,14 @@
 /* global require describe it ethers beforeEach */
 
 const { expect, assert } = require('chai')
-const { waffle } = require('@nomiclabs/buidler')
-const { deployContract, MockProvider } = waffle
-const { practicalLinearCurveAmount, asEth } = require('../lib/utils.js')
+const { practicalLinearCurveAmount } = require('../lib/utils.js')
 
 describe('AutoBond', () => {
   let curve
   let AutoBond
   let autoBond
-  let Squad
-  let squad
+  let Licenses
+  let licenses
   let reserveToken
   let reserveTokenAsAlice
   let reserveTokenAsBob
@@ -28,9 +26,9 @@ describe('AutoBond', () => {
   let autoBondAsAlice
   let autoBondAsBob
   let autoBondAsCarol
-  let squadAsAlice
-  let squadAsBob
-  let squadAsCarol
+  let licensesAsAlice
+  let licensesAsBob
+  let licensesAsCarol
 
   const networkFeeBasisPoints = 200
 
@@ -64,16 +62,16 @@ describe('AutoBond', () => {
     autoBondAsBob = autoBond.connect(bobWallet)
     autoBondAsCarol = autoBond.connect(carolWallet)
 
-    Squad = await ethers.getContractFactory('Squad')
-    squad = await Squad.deploy(
+    Licenses = await ethers.getContractFactory('Licenses')
+    licenses = await Licenses.deploy(
       await autoBond.address,
-      'TestSquad NFT',
+      'TestLicenses NFT',
       'TSN'
     )
 
-    squadAsAlice = squad.connect(aliceWallet)
-    squadAsBob = squad.connect(bobWallet)
-    squadAsCarol = squad.connect(carolWallet)
+    licensesAsAlice = licenses.connect(aliceWallet)
+    licensesAsBob = licenses.connect(bobWallet)
+    licensesAsCarol = licenses.connect(carolWallet)
   })
 
   //  Deploying
@@ -290,7 +288,6 @@ describe('AutoBond', () => {
     )
 
     const maxPurchasePrice = ethers.constants.WeiPerEther.mul('11')
-    const testLicenseUri = `example://metastore/${bondId}`
     const S = await autoBond.supplyOf(bondId)
     const amount = practicalLinearCurveAmount(S, purchasePrice)
 
@@ -300,12 +297,11 @@ describe('AutoBond', () => {
     const insufficientAmount = purchasePrice.sub(1)
     reserveToken.mint(bob, insufficientAmount)
     await expect(
-      squadAsBob.mint(
+      licensesAsBob.mint(
         bondId,
         purchasePrice,
         maxPurchasePrice,
         amount,
-        testLicenseUri
       )
     ).to.be.revertedWith(
       'ERC20: transfer amount exceeds balance'
@@ -318,12 +314,11 @@ describe('AutoBond', () => {
     )
 
     await expect(
-      squadAsBob.mint(
+      licensesAsBob.mint(
         bondId,
         purchasePrice,
         maxPurchasePrice,
         amount,
-        testLicenseUri
       )
     ).to.be.revertedWith(
       'ERC20: transfer amount exceeds allowance'
@@ -331,24 +326,23 @@ describe('AutoBond', () => {
 
     // set the allowance high enough and watch it succeed
     await reserveTokenAsBob.approve(autoBond.address, maxPurchasePrice)
-    await squadAsBob.mint(
+    await licensesAsBob.mint(
       bondId,
       purchasePrice,
       maxPurchasePrice,
       amount,
-      testLicenseUri
     )
 
     return new Promise((resolve, reject) => {
-      squad.on('Transfer', async (from, to, tokenId, event) => {
+      licenses.on('Transfer', async (from, to, tokenId, event) => {
         try {
           // confirm that bob owns the license
           assert(from === ethers.constants.AddressZero, 'Incorrect from address')
           assert(to === bob, 'Not created for Bob')
-          assert(await squad.ownerOf(tokenId) === bob, 'Incorrect owner')
+          assert(await licenses.ownerOf(tokenId) === bob, 'Incorrect owner')
           // confirm that the token has the right metadata
           assert(
-            await squad.tokenURI(tokenId) === testLicenseUri,
+            await licenses.tokenURI(tokenId) === await autoBond.uri(bondId),
             'tokenURI missmatch'
           )
           // bob should have spent all their reserve token
@@ -362,10 +356,10 @@ describe('AutoBond', () => {
             (await reserveToken.balanceOf(autoBond.address)).gte(purchasePrice),
             `autoBond should hold at least ${purchasePrice} of the reserve token`
           )
-          // `amount` of bond should be held by Squad
+          // `amount` of bond should be held by Licenses
           assert(
-            (await autoBond.balanceOf(bondId, squad.address)).eq(amount),
-            'squad holds wrong amount of bond'
+            (await autoBond.balanceOf(bondId, licenses.address)).eq(amount),
+            'licenses holds wrong amount of bond'
           )
           resolve()
         } catch (e) {
@@ -399,7 +393,6 @@ describe('AutoBond', () => {
 
     // people buy some
     const maxPurchasePrice = ethers.constants.WeiPerEther.mul('11')
-    const testLicenseUri = `example://metastore/${bondId}`
     let supply = await autoBond.supplyOf(bondId)
     let amount = practicalLinearCurveAmount(supply, purchasePrice)
 
@@ -413,22 +406,20 @@ describe('AutoBond', () => {
       supply = await autoBond.supplyOf(bondId)
       amount = practicalLinearCurveAmount(supply, purchasePrice)
       totalAmount = amount.add(totalAmount)
-      await squadAsBob.mint(
+      await licensesAsBob.mint(
         bondId,
         purchasePrice,
         maxPurchasePrice,
         amount,
-        testLicenseUri
       )
       supply = await autoBond.supplyOf(bondId)
       amount = practicalLinearCurveAmount(supply, purchasePrice)
       totalAmount = amount.add(totalAmount)
-      await squadAsCarol.mint(
+      await licensesAsCarol.mint(
         bondId,
         purchasePrice,
         maxPurchasePrice,
         amount,
-        testLicenseUri
       )
     }
 
@@ -488,33 +479,31 @@ describe('AutoBond', () => {
       metadata
     )
 
-    const testLicenseUri = `example://metastore/${bondId}`
     const supply = await autoBond.supplyOf(bondId)
     const amount = practicalLinearCurveAmount(supply, purchasePrice.mul(100))
     const maxPrice = purchasePrice.mul(100).add(ethers.utils.parseEther('1'))
     await reserveToken.mint(alice, maxPrice)
     await reserveTokenAsAlice.approve(autoBond.address, maxPrice)
 
-    assert((await squad.totalSupply()).eq(0), 'Incorrect starting supply')
+    assert((await licenses.totalSupply()).eq(0), 'Incorrect starting supply')
 
-    await squadAsAlice.mint(
+    await licensesAsAlice.mint(
       bondId,
       purchasePrice,
       maxPrice,
       amount,
-      testLicenseUri
     )
 
-    assert((await squad.totalSupply()).eq(1), 'Incorrect supply after mint')
+    assert((await licenses.totalSupply()).eq(1), 'Incorrect supply after mint')
 
-    const tokenId = squad.tokenOfOwnerByIndex(alice, 0)
+    const tokenId = licenses.tokenOfOwnerByIndex(alice, 0)
 
     // Alice redeems her license
-    await squadAsAlice.redeem(tokenId)
+    await licensesAsAlice.redeem(tokenId)
 
     // Confirm that the NFT no longer exists
-    assert((await squad.totalSupply()).eq(0), 'Incorrect supply after redeem')
-    await expect(squad.ownerOf(tokenId)).to.be.revertedWith('ERC721: owner query for nonexistent token')
+    assert((await licenses.totalSupply()).eq(0), 'Incorrect supply after redeem')
+    await expect(licenses.ownerOf(tokenId)).to.be.revertedWith('ERC721: owner query for nonexistent token')
 
     // Confirm that Alice's balance has the claimed bond tokens
     assert(
@@ -566,42 +555,40 @@ describe('AutoBond', () => {
       'AutoBond started with nonzero reserve token'
     )
 
-    assert((await squad.totalSupply()).eq(0), 'Incorrect starting supply')
+    assert((await licenses.totalSupply()).eq(0), 'Incorrect starting supply')
 
     // Everyone buys a bunch of each
-    async function mintOne (minterAddress, reserveTokenAsMinter, squadAsMinter, bondId, purchasePrice) {
-      const testLicenseUri = `example://metastore/${bondId}`
+    async function mintOne (minterAddress, reserveTokenAsMinter, licensesAsMinter, bondId, purchasePrice) {
       const supply = await autoBond.supplyOf(bondId)
       const amount = practicalLinearCurveAmount(supply, purchasePrice)
       const maxPrice = purchasePrice.add(ethers.utils.parseEther('1'))
       await reserveToken.mint(minterAddress, maxPrice)
       await reserveTokenAsMinter.approve(autoBond.address, maxPrice)
 
-      await squadAsMinter.mint(
+      await licensesAsMinter.mint(
         bondId,
         purchasePrice,
         maxPrice,
         amount,
-        testLicenseUri
       )
     }
     // alice buys 3 of each
-    await mintOne(alice, reserveTokenAsAlice, squadAsAlice, aliceBondId, alicePurchasePrice)
-    await mintOne(alice, reserveTokenAsAlice, squadAsAlice, aliceBondId, alicePurchasePrice)
-    await mintOne(alice, reserveTokenAsAlice, squadAsAlice, aliceBondId, alicePurchasePrice)
-    await mintOne(alice, reserveTokenAsAlice, squadAsAlice, bobBondId, bobPurchasePrice)
-    await mintOne(alice, reserveTokenAsAlice, squadAsAlice, bobBondId, bobPurchasePrice)
-    await mintOne(alice, reserveTokenAsAlice, squadAsAlice, bobBondId, bobPurchasePrice)
+    await mintOne(alice, reserveTokenAsAlice, licensesAsAlice, aliceBondId, alicePurchasePrice)
+    await mintOne(alice, reserveTokenAsAlice, licensesAsAlice, aliceBondId, alicePurchasePrice)
+    await mintOne(alice, reserveTokenAsAlice, licensesAsAlice, aliceBondId, alicePurchasePrice)
+    await mintOne(alice, reserveTokenAsAlice, licensesAsAlice, bobBondId, bobPurchasePrice)
+    await mintOne(alice, reserveTokenAsAlice, licensesAsAlice, bobBondId, bobPurchasePrice)
+    await mintOne(alice, reserveTokenAsAlice, licensesAsAlice, bobBondId, bobPurchasePrice)
 
     // Bob buys 1 of each
-    await mintOne(bob, reserveTokenAsBob, squadAsBob, aliceBondId, alicePurchasePrice)
-    await mintOne(bob, reserveTokenAsBob, squadAsBob, bobBondId, bobPurchasePrice)
+    await mintOne(bob, reserveTokenAsBob, licensesAsBob, aliceBondId, alicePurchasePrice)
+    await mintOne(bob, reserveTokenAsBob, licensesAsBob, bobBondId, bobPurchasePrice)
 
     // Carol buys 2 of each
-    await mintOne(carol, reserveTokenAsCarol, squadAsCarol, aliceBondId, alicePurchasePrice)
-    await mintOne(carol, reserveTokenAsCarol, squadAsCarol, aliceBondId, alicePurchasePrice)
-    await mintOne(carol, reserveTokenAsCarol, squadAsCarol, bobBondId, bobPurchasePrice)
-    await mintOne(carol, reserveTokenAsCarol, squadAsCarol, bobBondId, bobPurchasePrice)
+    await mintOne(carol, reserveTokenAsCarol, licensesAsCarol, aliceBondId, alicePurchasePrice)
+    await mintOne(carol, reserveTokenAsCarol, licensesAsCarol, aliceBondId, alicePurchasePrice)
+    await mintOne(carol, reserveTokenAsCarol, licensesAsCarol, bobBondId, bobPurchasePrice)
+    await mintOne(carol, reserveTokenAsCarol, licensesAsCarol, bobBondId, bobPurchasePrice)
 
     // confirm that autobond has the right amount of reserve token
     // 6 of each were bought so autobond should have >= 6*alicePurchasePrice + 6*bobPurchasePrice
@@ -611,30 +598,30 @@ describe('AutoBond', () => {
     )
 
     // everyone redeems all their licenses
-    async function redeemOne (redeemerAddress, squadAsRedeemer, tokenIndex) {
-      const licenseId = await squadAsRedeemer.tokenOfOwnerByIndex(redeemerAddress, tokenIndex)
-      return squadAsRedeemer.redeem(licenseId)
+    async function redeemOne (redeemerAddress, licensesAsRedeemer, tokenIndex) {
+      const licenseId = await licensesAsRedeemer.tokenOfOwnerByIndex(redeemerAddress, tokenIndex)
+      return licensesAsRedeemer.redeem(licenseId)
     }
-    await redeemOne(alice, squadAsAlice, 0)
-    await redeemOne(alice, squadAsAlice, 0)
-    await redeemOne(alice, squadAsAlice, 0)
-    await redeemOne(alice, squadAsAlice, 0)
-    await redeemOne(alice, squadAsAlice, 0)
-    await redeemOne(alice, squadAsAlice, 0)
+    await redeemOne(alice, licensesAsAlice, 0)
+    await redeemOne(alice, licensesAsAlice, 0)
+    await redeemOne(alice, licensesAsAlice, 0)
+    await redeemOne(alice, licensesAsAlice, 0)
+    await redeemOne(alice, licensesAsAlice, 0)
+    await redeemOne(alice, licensesAsAlice, 0)
 
-    await redeemOne(bob, squadAsBob, 0)
-    await redeemOne(bob, squadAsBob, 0)
+    await redeemOne(bob, licensesAsBob, 0)
+    await redeemOne(bob, licensesAsBob, 0)
 
-    await redeemOne(carol, squadAsCarol, 0)
-    await redeemOne(carol, squadAsCarol, 0)
-    await redeemOne(carol, squadAsCarol, 0)
-    await redeemOne(carol, squadAsCarol, 0)
+    await redeemOne(carol, licensesAsCarol, 0)
+    await redeemOne(carol, licensesAsCarol, 0)
+    await redeemOne(carol, licensesAsCarol, 0)
+    await redeemOne(carol, licensesAsCarol, 0)
 
-    // confirm that squad has almost no bond tokens
-    assert((await autoBond.balanceOf(aliceBondId, squad.address)).eq(0),
-      'Squad A bond balance too high')
-    assert((await autoBond.balanceOf(bobBondId, squad.address)).eq(0),
-      'Squad B bond balance too high')
+    // confirm that licenses has almost no bond tokens
+    assert((await autoBond.balanceOf(aliceBondId, licenses.address)).eq(0),
+      'Licenses A bond balance too high')
+    assert((await autoBond.balanceOf(bobBondId, licenses.address)).eq(0),
+      'Licenses B bond balance too high')
 
     // everyone sells their bond tokens
     function sellAllBondTokens (bondIds, autoBondAsSeller) {

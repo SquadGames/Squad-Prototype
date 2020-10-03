@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "./Curve.sol";
 import "./BondToken.sol";
+import "./FeeLib.sol";
 import "@nomiclabs/buidler/console.sol";
 
 contract AutoBond is Ownable {
@@ -23,7 +24,7 @@ contract AutoBond is Ownable {
     // address where network fees are sents
     address public treasury;
 
-    // accounts hold funds that may be withdrawn
+    // accounts hold funds that may be withdrawn 
     mapping(address => uint256) public accounts;
     uint256 accountsTotal;
 
@@ -43,9 +44,11 @@ contract AutoBond is Ownable {
         // purchasePrice is emitted in the purchase event so clients can
         // check whether how much a user needs to have for a calid
         // purchase
-        // TODO maybe factor this out into the Squad contract
+
         uint256 purchasePrice;
         BondToken token;
+
+        string uri;
     }
 
     // mapping from definition ID to it's bond
@@ -107,7 +110,7 @@ contract AutoBond is Ownable {
         uint256 networkFee;
         uint256 beneficiaryTotal;
         uint256 dust;
-        (networkFee, beneficiaryTotal, dust) = _calculateFeeSplit(
+        (networkFee, beneficiaryTotal, dust) = FeeLib.calculateFeeSplit(
             networkFeeBasisPoints,
             accounts[beneficiary]
         );
@@ -116,7 +119,8 @@ contract AutoBond is Ownable {
         // transfer the account total minus the network fee to the beneficiary
         require(reserveToken.transfer(beneficiary, beneficiaryTotal));
         accounts[beneficiary] = accounts[beneficiary].sub(
-            beneficiaryTotal.add(networkFee));
+            beneficiaryTotal.add(networkFee)
+        );
         accountsTotal = accountsTotal.sub(beneficiaryTotal.add(networkFee));
 
         // transfer the fee to the treasury
@@ -130,7 +134,8 @@ contract AutoBond is Ownable {
         address beneficiary,
         uint16 beneficiaryBasisPoints,
         uint256 purchasePrice,
-        string metadata
+        string metadata,
+        string uri
     );
 
     function createBond(
@@ -140,9 +145,10 @@ contract AutoBond is Ownable {
         uint256 purchasePrice,
         string memory tokenName,
         string memory tokenSymbol,
-        string memory metadata
-        // TODO move License URI here
-    ) public {
+        string memory metadata,
+        string memory uri
+    ) public
+    {
         require(
             beneficiary != address(0),
             "AutoBond: Beneficiary address required"
@@ -158,13 +164,15 @@ contract AutoBond is Ownable {
         newBond.beneficiaryBasisPoints = beneficiaryBasisPoints;
         newBond.purchasePrice = purchasePrice;
         newBond.token = new BondToken(tokenName, tokenSymbol);
+        newBond.uri = uri;
 
         emit NewBond(
             bondId,
             beneficiary,
             beneficiaryBasisPoints,
             purchasePrice,
-            metadata
+            metadata,
+            uri
         );
     }
 
@@ -187,20 +195,6 @@ contract AutoBond is Ownable {
         emit PurchasePriceSet(currentPrice, newPrice);
     }
 
-    function _calculateFeeSplit(uint16 basisPoints, uint256 total)
-        internal
-        pure
-        returns (uint256, uint256, uint256)
-    {
-        uint256 fee;
-        uint256 dust;
-        uint256 remainder;
-        fee = total.mul(basisPoints).div(10000);
-        dust = total.mul(basisPoints).mod(10000);
-        remainder = (total - fee) - dust;
-        return (fee, remainder, dust);
-    }
-
     // Purchase is emitted on all bond purchases, and includes enough
     // informatino for clients to track whether someone owns the
     // license according to the purchasePrice at the time of purchase
@@ -220,7 +214,10 @@ contract AutoBond is Ownable {
     ) public {
         // get the total price for the amount
         Bond storage bond = bonds[bondId];
-        require(bond.beneficiary != address(0), "AutoBond: Bond does not exist");
+        require(
+            bond.beneficiary != address(0),
+            "AutoBond: Bond does not exist"
+        );
         uint256 totalPrice = curve.price(bond.token.totalSupply(), amount);
         require(totalPrice <= maxPrice, "AutoBond: price higher than maxPrice");
         // Charge the sender totalPrice
@@ -232,12 +229,12 @@ contract AutoBond is Ownable {
         uint256 beneficiaryFee;
         uint256 reserveTotal;
         uint256 dust;
-        (beneficiaryFee, reserveTotal, dust) = _calculateFeeSplit(
+        (beneficiaryFee, reserveTotal, dust) = FeeLib.calculateFeeSplit(
             bond.beneficiaryBasisPoints,
             totalPrice
         );
         accounts[bond.beneficiary] = accounts[bond.beneficiary].add(
-           beneficiaryFee.add(dust)
+            beneficiaryFee.add(dust)
         );
         accountsTotal = accountsTotal.add(beneficiaryFee.add(dust));
 
@@ -267,9 +264,9 @@ contract AutoBond is Ownable {
             "not enough supply"
         );
         require(
-                balanceOf(bondId, msg.sender) >= amount,
-                "Seller doesn't own enough to sell"
-                );
+            balanceOf(bondId, msg.sender) >= amount,
+            "Seller doesn't own enough to sell"
+        );
 
         Bond storage bond = bonds[bondId];
         uint256 subtotalValue = curve.price(
@@ -280,7 +277,7 @@ contract AutoBond is Ownable {
         uint256 beneficiaryFee;
         uint256 sellerValue;
         uint256 dust;
-        (beneficiaryFee, sellerValue, dust) = _calculateFeeSplit(
+        (beneficiaryFee, sellerValue, dust) = FeeLib.calculateFeeSplit(
             bond.beneficiaryBasisPoints,
             subtotalValue
         );
@@ -384,5 +381,9 @@ contract AutoBond is Ownable {
 
     function recoverReserveDust() public {
         reserveToken.transfer(treasury, reserveDust());
+    }
+
+    function uri(bytes32 bondId) public view returns (string memory) {
+        return bonds[bondId].uri;
     }
 }

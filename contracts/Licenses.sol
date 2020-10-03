@@ -8,8 +8,7 @@ import "./AutoBond.sol";
 import "./BondToken.sol";
 import "@nomiclabs/buidler/console.sol";
 
-// TODO Change the name to Licence something or other
-contract Squad is ERC721 {
+contract Licenses is ERC721 {
     using Counters for Counters.Counter;
 
     Counters.Counter private _tokenIds;
@@ -28,7 +27,7 @@ contract Squad is ERC721 {
         string memory name,
         string memory symbol
     ) public ERC721(name, symbol) {
-        require(_autoBond != address(0), "Squad: _autoBond address required");
+        require(_autoBond != address(0), "Licenses: _autoBond address required");
         autoBond = AutoBond(_autoBond);
         ERC20(autoBond.reserveToken()).approve(_autoBond, 2**256 - 1);
     }
@@ -42,37 +41,37 @@ contract Squad is ERC721 {
         address owner,
         bytes32 bondId,
         uint256 amount,
-        string licenseURI
+        string bondURI
     );
 
     function mint(
         bytes32 bondId,
         uint256 purchasePrice,
         uint256 maxPrice,
-        uint256 amount, // client needs to calculate the amount that
-        // will give a close enough price to the
-        // purchase price
-        string memory licenseURI // TODO move this out of here
+        // client needs to calculate the amount that will give a close
+        // enough price to the purchase price
+        uint256 amount
     ) public returns (uint256) {
         require(
             autoBond.exists(bondId),
-            "Squad: Can't mint licence for non-existent bond"
+            "Licenses: Can't mint licence for non-existent bond"
         );
         require(
             autoBond.licensePriceOf(bondId) == purchasePrice,
-            "Squad: purchasePrice mismatch"
+            "Licenses: purchasePrice mismatch"
         );
         uint256 price = autoBond.tokenPriceOf(bondId, amount);
-        require(price >= purchasePrice, "Squad: amount too low");
-        require(price <= maxPrice, "Squad: price higher than maxPrice");
+        require(price >= purchasePrice, "Licenses: amount too low");
+        require(price <= maxPrice, "Licenses: price higher than maxPrice");
 
         _tokenIds.increment();
         uint256 newLicenseId = _tokenIds.current();
         _mint(msg.sender, newLicenseId);
-        _setTokenURI(newLicenseId, licenseURI);
+        string memory bondURI = autoBond.uri(bondId);
+        _setTokenURI(newLicenseId, bondURI);
 
         // transfer purchasePrice worth of the reserve token from msg
-        // sender to Squad
+        // sender to Licenses
         require(
             autoBond.transferReserveTokenFrom(msg.sender, address(this), price)
         );
@@ -83,21 +82,24 @@ contract Squad is ERC721 {
         // TODO chance license to be claim
         licenses[newLicenseId] = License({bondId: bondId, claimAmount: amount});
 
-        emit NewLicense(newLicenseId, msg.sender, bondId, amount, licenseURI);
+        emit NewLicense(newLicenseId, msg.sender, bondId, amount, bondURI);
 
         return newLicenseId;
     }
 
     function redeem(uint256 licenseId) public {
         License memory license = licenses[licenseId];
-        require(license.bondId != bytes32(0), "Squad: Licence not found");
+        require(license.bondId != bytes32(0), "Licenses: Licence not found");
         require(
             ownerOf(licenseId) == msg.sender,
-            "Squad: Only owner can redeem a license"
+            "Licenses: Only owner can redeem a license"
         );
 
         // TODO consider calling this bondTokenAddress
-        ERC20(autoBond.bondAddress(license.bondId)).approve(address(autoBond), 2**256 - 1);
+        ERC20(autoBond.bondAddress(license.bondId)).approve(
+            address(autoBond),
+            2**256 - 1
+        );
 
         // transfer all the claimed bond token to the caller
         require(
